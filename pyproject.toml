@@ -1,0 +1,83 @@
+[project]
+name = "fuellib-inverse"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Troy N. Smith", email = "troy.smith@uga.edu" }
+]
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "jax>=0.11.1",
+    "mendeleev>=0.6.1",
+    "numpy>=2.5.3",
+    "pandas>=3.0.5",
+    "quax>=0.4.3",
+    "rdkit>=2026.3.6",
+    "unxt>=2.0.4",
+]
+
+[tool.taskipy.tasks]
+format = "ruff format ."
+lint = "ruff check . --fix"
+types = "ty check ."
+imports = "lint-imports"
+test = "pytest"
+
+[build-system]
+requires = ["uv_build>=0.12.9,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "import-linter>=2.13",
+    "pytest>=9.1.1",
+    "ruff>=0.16.4",
+    "taskipy>=1.14.1",
+    "ty>=0.0.74",
+    "uv>=0.12.6",
+]
+
+# Ruff configurations
+[tool.ruff]
+exclude = [
+    "docs",
+    "tutorials",
+]
+
+[tool.ruff.lint]
+ignore = [
+    "COM812",   # missing trailing comma (handled by format)
+    "TID252",   # relative import
+    "D203",     # conflict: incorrect blank line before class (uses D211 instead)
+    "D213",     # conflict: multi-line summary second line (uses D212 instead)
+    "CPY001",   # copyright notice at top of file
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**.py" = ["S101"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+# Ty configurations
+[tool.ty.src]
+include = [
+    "src",
+    "tests",
+]
+
+# Import-linter configurations
+[tool.importlinter]
+root_package = "fuellib_inverse"
+
+[[tool.importlinter.contracts]]
+name = "Module layering"
+type = "layers"
+layers = [
+    "fuellib_inverse.fuel",
+    "fuellib_inverse.gcm",
+]
+ignore_imports = [
+    "fuellib_inverse.gcm.gani -> fuellib_inverse.fuel"
+]
