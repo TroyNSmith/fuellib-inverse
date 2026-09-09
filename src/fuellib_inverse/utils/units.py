@@ -19,9 +19,13 @@ fahrenheit = apyu.def_unit(
     1 * apyu.imperial.deg_F,
     doc="Fahrenheit temperature unit",
 )
+## Undefined
+dimensionless = apyu.def_unit(
+    "dimensionless", 1 * apyu.dimensionless_unscaled, doc="Dimensionless unit"
+)
 
 ## Register the new units with astropy so they can be used in unxt.Quantity objects.
-apyu.add_enabled_units([atm, mks, dyne_cm2, cgs, fahrenheit])
+apyu.add_enabled_units([atm, mks, dyne_cm2, cgs, fahrenheit, dimensionless])
 
 
 def convert_temperature(temp: AbstractQuantity, target_unit: str) -> AbstractQuantity:

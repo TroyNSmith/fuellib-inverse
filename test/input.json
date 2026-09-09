@@ -1,0 +1,42 @@
+{
+    "optimization": {
+        "max_iterations": 1000,
+        "tolerance": 1e-6,
+        "learning_rate": 0.01,
+        "regularization_strength": 0.1
+    },
+    "composition": {
+        "aromatics": {
+            "volume_percent": {
+                "lambda_": 1.0,
+                "max": 25.0,
+                "min": 8.0
+            }
+        }
+    },
+    "volatility": {
+        "density": {
+            "units": "kg/m^3",
+            "15 Celsius": {
+                "lambda_": 1.0,
+                "max": 840.0,
+                "min": 775.0
+            }
+        }
+    },
+    "fluidity": {
+        "viscosity": {
+            "units": "mm^2/s",
+            "-40 Celsius": {
+                "lambda_": 1.0,
+                "max": 12.0,
+                "min": 0.0
+            },
+            "-20 Celsius": {
+                "lambda_": 1.0,
+                "max": 8.0,
+                "min": 0.0
+            }
+        }
+    }
+}

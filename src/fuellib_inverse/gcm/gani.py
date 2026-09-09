@@ -61,7 +61,9 @@ class GaniGCM:
         self._CpBk = df.loc["CpBk"].to_numpy(dtype=float)
         self._CpCk = df.loc["CpCk"].to_numpy(dtype=float)
 
-    def load_fuel_decomposition(self, csv_path: str | Path) -> npt.NDArray[np.int_]:
+    def load_fuel_decomposition(
+        self, csv_path: str | Path, families: list[str] | None = None
+    ) -> npt.NDArray[np.int_]:
         """Load the group decomposition of a fuel from a CSV file.
 
         The CSV columns may equal ``self.groups`` or be a subset of them, in
@@ -71,15 +73,29 @@ class GaniGCM:
 
         :param csv_path: Path to the CSV file containing the group decomposition.
         :type csv_path: str or Path
+        :param families: If provided, restrict and reorder the rows of the
+            decomposition to match this list of family names (e.g. the
+            families present in a fuel's GCxGC data). Any families in the CSV
+            not present in this list are dropped.
+        :type families: list[str] | None
         :return: Compound decompositions.
         :rtype: npt.NDArray[np.int_]
-        :raises ValueError: If the CSV file does not contain any compounds, or
-            contains groups not in ``self.groups``.
+        :raises ValueError: If the CSV file does not contain any compounds,
+            contains groups not in ``self.groups``, or is missing any of the
+            requested ``families``.
         """
         df = pd.read_csv(csv_path, skipinitialspace=True, index_col=0)
+        if families is not None:
+            missing_families = set(families) - set(df.index)
+            if missing_families:
+                raise ValueError(
+                    f"{csv_path} is missing families: {sorted(missing_families)}"
+                )
+            df = df.loc[families]
+
         compounds = df.index.tolist()
         if len(compounds) < 1:
-            raise ValueError(f"{csv_path} must contain at least one compound.")
+            raise ValueError(f"{csv_path} must contain at least one family.")
 
         csv_groups = df.columns.to_numpy(dtype=str)
         unknown_groups = set(csv_groups) - set(self.groups)

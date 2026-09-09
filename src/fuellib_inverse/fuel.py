@@ -2,6 +2,7 @@
 
 from functools import cached_property
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -12,6 +13,7 @@ from unxt import AbstractQuantity, Quantity
 
 from .gcm.gani import GaniGCM
 from .rd import mol
+from .utils.helpers import atleast_col
 from .utils.units import convert_temperature
 
 gani_gcm = GaniGCM()  # Initialize the Gani group contribution method
@@ -41,22 +43,6 @@ def _check_valid_property(
         raise ValueError(
             f"{name} must have length {expected_length}, but has length {value.shape[0]}."
         )
-
-
-def _atleast_col(x: AbstractQuantity) -> AbstractQuantity:
-    """
-    Add a trailing axis so an array of temperatures broadcasts against a per-compound axis; scalars pass through.
-
-    Idempotent: only 1D arrays are expanded, so calling this again on an already-expanded
-    array (e.g. because a caller already column-expanded T before passing it to another
-    method that also calls this) is a no-op instead of adding another axis.
-
-    :param x: Input array.
-    :type x: Array
-    :return: Array with at least one trailing axis.
-    :rtype: Array
-    """
-    return x[:, None] if qnp.ndim(x) == 1 else x
 
 
 class Fuel:
@@ -116,9 +102,9 @@ class Fuel:
         self.smiles = []
 
         # Load GCxGC data for the fuel
-        gcxgc_path = fuelDataDir / "gcData" / f"{name}.csv"
+        gcxgc_path = fuelDataDir / f"{name}.gcxgc.csv"
         df = pd.read_csv(gcxgc_path, skipinitialspace=True)
-        required_cols = ["Family", "SMILES", "Weight %"]
+        required_cols = ["Family", "SMILES"]
         if not all(col in df.columns for col in required_cols):
             msg = f"Missing required columns in GCxGC data for fuel '{name}'. Required columns: {required_cols}"
             raise ValueError(msg)
@@ -132,17 +118,26 @@ class Fuel:
             else None
         )
 
-        wts = df["Weight %"].to_numpy(dtype=float)
+        wts = (
+            df["Weight %"].to_numpy(dtype=float)
+            if "Weight %" in df.columns
+            else np.full(len(df), np.nan)
+        )
         self._Y_0 = wts / np.sum(wts)  # Normalize weights to get mass fractions
 
         # Load group contribution decomposition data for the fuel
         gani_decomp_path = (
-            fuelDataDir / "groupDecompositionData" / f"{name}.gani.csv"
+            fuelDataDir / f"{name}.gani.csv"
             if decompName is None
-            else fuelDataDir / "groupDecompositionData" / decompName
+            else fuelDataDir / f"{decompName}.gani.csv"
         )
-        self.gani_decomp = gani_gcm.load_fuel_decomposition(gani_decomp_path)
+        self.gani_decomp = gani_gcm.load_fuel_decomposition(
+            gani_decomp_path, families=self.families
+        )
 
+        self._init_critical_properties()  # Initialize critical properties of the fuel components
+
+    def _init_critical_properties(self) -> None:
         ## Initialize critical properties of the fuel components
         self._Tc = gani_gcm.Tc(self, unit="K")
         self._Pc = gani_gcm.Pc(self, unit="Pa")
@@ -294,6 +289,60 @@ class Fuel:
         hc_types[self._aromatic] = "aromatic"
         return hc_types
 
+    # Utility functions
+    def mass2Y(self, mass: AbstractQuantity) -> Array:
+        """
+        Convert component masses to mass fractions of the mixture.
+
+        :param mass: Masses of the components in the mixture.
+        :type mass: AbstractQuantity
+        :return: Mass fractions of the components in the mixture.
+        :rtype: Array
+        """
+        _check_valid_property(mass, self.num_compounds, "mass")
+        Y = mass / qnp.sum(mass)
+        return qnp.array(Y.value)
+
+    def mass2X(self, mass: AbstractQuantity) -> Array:
+        """
+        Convert component masses to mole fractions of the mixture.
+
+        :param mass: Masses of the components in the mixture.
+        :type mass: AbstractQuantity
+        :return: Mole fractions of the components in the mixture.
+        :rtype: Array
+        """
+        _check_valid_property(mass, self.num_compounds, "mass")
+        X = (mass / self.MW) / qnp.sum(mass / self.MW)
+        return qnp.array(X.value)
+
+    def X2Y(self, X: Array) -> Array:
+        """
+        Convert mole fractions to mass fractions of the mixture.
+
+        :param X: Mole fractions of the components in the mixture.
+        :type X: Array
+        :return: Mass fractions of the components in the mixture.
+        :rtype: Array
+        """
+        _check_valid_property(X, self.num_compounds, "X")
+        Y = (X * self.MW) / qnp.sum(X * self.MW)
+        return qnp.array(Y.value)
+
+    def Y2X(self, Y: Array) -> Array:
+        """
+        Convert mass fractions to mole fractions of the mixture.
+
+        :param Y: Mass fractions of the components in the mixture.
+        :type Y: Array
+        :return: Mole fractions of the components in the mixture.
+        :rtype: Array
+        """
+        _check_valid_property(Y, self.num_compounds, "Y")
+        X = (Y / self.MW) / qnp.sum(Y / self.MW)
+        return qnp.array(X.value)
+
+    # Component property correlations
     def molar_liquid_vol(
         self, T: AbstractQuantity, *, unit: str = "m^3/mol"
     ) -> Quantity:
@@ -309,7 +358,7 @@ class Fuel:
         """
         Tstp = Quantity(298.15, "K")
 
-        T = _atleast_col(T)  # Ensure T has a trailing axis for broadcasting
+        T = atleast_col(T)  # Ensure T has a trailing axis for broadcasting
         T = convert_temperature(T, "K")
         Tc = convert_temperature(self.Tc, "K")
 
@@ -337,9 +386,30 @@ class Fuel:
         :return: Density of fuel compounds at the specified temperature.
         :rtype: AbstractQuantity
         """
-        T = _atleast_col(T)  # Ensure T has a trailing axis for broadcasting
+        T = atleast_col(T)  # Ensure T has a trailing axis for broadcasting
         T = convert_temperature(T, "K")
         return (self.MW / self.molar_liquid_vol(T, unit="m^3/mol")).to(unit)
+
+    def viscosity_kinematic(
+        self, T: AbstractQuantity, *, unit: str = "mm^2/s"
+    ) -> AbstractQuantity:
+        """
+        Calculate the kinematic viscosity of fuel compounds over a range of temperatures.
+
+        :param T: Temperatures at which to calculate the kinematic viscosity.
+        :type T: AbstractQuantity
+        :param unit: Desired unit for the output. Defaults to "mm^2/s".
+        :type unit: str
+        :return: Kinematic viscosity of fuel compounds at the specified temperature.
+        :rtype: AbstractQuantity
+        """
+        T = atleast_col(T)  # Ensure T has a trailing axis for broadcasting
+        T = convert_temperature(T, "Celsius")
+        Tb = convert_temperature(self.Tb, "Celsius")
+
+        num = Quantity(442.78, "Celsius") + 1.6452 * Tb
+        denom = T + Quantity(239.0, "Celsius") - 0.19 * Tb
+        return Quantity(qnp.exp(-3.0171 + (num / denom)).value, "mm^2/s").to(unit)
 
     # Mixture property correlations
     def mean_molecular_weight(self, *, unit: str = "kg/mol") -> AbstractQuantity:
@@ -365,8 +435,44 @@ class Fuel:
         :rtype: AbstractQuantity
         """
         # molar_liquid_vol already handles T conversion and broadcasting, so we can skip it here
-        return qnp.sum(self.Y_0 * (self.MW / self.molar_liquid_vol(T)), axis=-1).to(
-            unit
+        return qnp.sum(self.Y_0 * self.density(T), axis=-1).to(unit)
+
+    def mixture_kinematic_viscosity(
+        self,
+        T: AbstractQuantity,
+        *,
+        unit: str = "mm^2/s",
+        correlation: Literal["Kendall-Monroe", "Arrhenius"] = "Kendall-Monroe",
+    ) -> AbstractQuantity:
+        """
+        Calculate the kinematic viscosity of the mixture over a range of temperatures.
+
+        :param T: Temperatures at which to calculate the kinematic viscosity.
+        :type T: AbstractQuantity
+        :param unit: Desired unit for the output. Defaults to "mm^2/s".
+        :type unit: str
+        :param correlation: Correlation method to use for calculating kinematic viscosity. Options are "Kendall-Monroe" or "Arrhenius". Defaults to "Kendall-Monroe".
+        :type correlation: Literal["Kendall-Monroe", "Arrhenius"], optional
+        :return: Kinematic viscosity of the mixture at the specified temperature.
+        :rtype: AbstractQuantity
+        """
+        # viscosity_kinematic already handles T conversion and broadcasting, so we can skip it here
+        # Stripping units from nu_i for the correlation calculations, then reattaching units at the end
+        nu_i = qnp.array(self.viscosity_kinematic(T).to("m^2/s").value)
+        Xi = self.Y2X(self.Y_0)
+
+        if correlation == "Kendall-Monroe":
+            return Quantity(qnp.exp(qnp.sum(Xi * qnp.log(nu_i), axis=-1)), "m^2/s").to(
+                unit
+            )
+
+        elif correlation == "Arrhenius":
+            return Quantity(
+                qnp.sum(Xi * qnp.power(nu_i, 1.0 / 3.0), axis=-1) ** 3.0, "m^2/s"
+            ).to(unit)
+
+        raise ValueError(
+            f"Invalid correlation '{correlation}'. Must be 'Kendall-Monroe' or 'Arrhenius'."
         )
 
     # Critical property getters and setters
