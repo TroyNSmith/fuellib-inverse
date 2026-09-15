@@ -219,3 +219,6 @@ __marimo__/
 
 # Virtual environments
 uv.lock
+
+# Scratch files
+tests/scratch.py

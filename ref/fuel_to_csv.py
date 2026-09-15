@@ -4,9 +4,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from unxt import Quantity
 
-from fuellib_inverse import Fuel, inverse
+from ref import Fuel
 
 fuel = Fuel("jet-a")
 
@@ -52,4 +51,4 @@ units = {
 df = pd.DataFrame(data)
 df = pd.concat([pd.DataFrame([units]), df], ignore_index=True)
 df.set_index("SMILES", inplace=True)
-df.to_csv(Path(__file__).parent / "jet-a.csv")
+df.to_csv(Path(__file__).parent / "test/jet-a.csv")

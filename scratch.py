@@ -6,7 +6,7 @@ import optax
 from jax import Array
 from unxt import Quantity
 
-from fuellib_inverse import Fuel
+from ref import Fuel
 
 fuel = Fuel("jet-a")
 t = Quantity(300, "K")

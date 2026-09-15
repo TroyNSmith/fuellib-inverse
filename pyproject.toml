@@ -10,28 +10,25 @@ requires-python = ">=3.12,<3.15"
 dependencies = [
     "beartype>=0.22.9",
     "diffrax>=0.7.2",
+    "fuellib",
     "jax>=0.11.1",
     "matplotlib>=3.11.1",
     "mendeleev>=0.6.1",
     "numpy>=2.5.3",
     "optax>=0.2.8",
-    "pandas>=3.0.5",
+    "pydantic>=2.13.5",
+    "pyparsing>=3.3.2",
     "quax>=0.4.3",
-    "rdkit>=2026.3.6",
     "unxt>=2.0.4",
     "unxts-api>=2.0.1",
 ]
 
-[tool.taskipy.tasks]
-format = "ruff format ."
-lint = "ruff check . --fix"
-types = "ty check ."
-imports = "lint-imports"
-test = "pytest"
-
 [build-system]
 requires = ["uv_build>=0.12.9,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.uv.sources]
+fuellib = { path = "../FuelLib", editable = true }
 
 [dependency-groups]
 dev = [
@@ -43,11 +40,20 @@ dev = [
     "uv>=0.12.6",
 ]
 
+# Tasks
+[tool.taskipy.tasks]
+format = "ruff format ."
+lint = "ruff check . --fix"
+types = "ty check ."
+imports = "lint-imports"
+test = "pytest"
+
 # Ruff configurations
 [tool.ruff]
 exclude = [
     "docs",
     "tutorials",
+    "ref",
 ]
 
 [tool.ruff.lint]
@@ -72,6 +78,11 @@ include = [
     "tests",
 ]
 
+[tool.ty.environment]
+# `fuellib` is installed as an editable dependency from a sibling checkout; ty can't
+# follow the editable-install import hook, so point it at the source directly.
+extra-paths = ["../FuelLib"]
+
 # Import-linter configurations
 [tool.importlinter]
 root_package = "fuellib_inverse"
@@ -80,9 +91,7 @@ root_package = "fuellib_inverse"
 name = "Module layering"
 type = "layers"
 layers = [
-    "fuellib_inverse.fuel",
-    "fuellib_inverse.gcm",
-]
-ignore_imports = [
-    "fuellib_inverse.gcm.gani -> fuellib_inverse.fuel"
+    "fuellib_inverse.solve",
+    "fuellib_inverse.parse",
+    "fuellib_inverse.constraints",
 ]

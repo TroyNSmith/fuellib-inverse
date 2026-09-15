@@ -1,6 +1,6 @@
 """FuelLib Inverse package."""
 
-from . import inverse
-from .fuel import Fuel
+from .parse import OptimizationParameters
+from .solve import solve
 
-__all__ = ["Fuel", "inverse"]
+__all__ = ["OptimizationParameters", "solve"]

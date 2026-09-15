@@ -1,5 +1,5 @@
 """Inverse module for Fuellib."""
 
-from .core import solve
+from .core_old import solve
 
 __all__ = ["solve"]
