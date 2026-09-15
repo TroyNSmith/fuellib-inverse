@@ -224,6 +224,7 @@ def solve(
     component_densities = _precompute_by_temperature(
         density_constraints, lambda T: components.densities(T, props)
     )
+    
 
     viscosity_constraints = config.constraints["fluidity"]["viscosity"]
     component_viscosities = _precompute_by_temperature(

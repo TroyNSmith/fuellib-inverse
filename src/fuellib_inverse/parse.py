@@ -204,7 +204,7 @@ class OptimizationParameters(BaseModel):
     regularization_strength: float = 0.1
     optimizer_method: Literal["adam"] = "adam"
 
-    num_compounds: int
+    fuel: fuel
     constraints: list[Constraint] = Field(default_factory=list)
 
     @classmethod
@@ -263,7 +263,7 @@ class OptimizationParameters(BaseModel):
             "learning_rate": learning_rate,
             "regularization_strength": regularization_strength,
             "optimizer_method": optimizer_method,
-            "num_compounds": fuel_.num_compounds,
+            "fuel": fuel_,
             "constraints": constraints,
         }
 
