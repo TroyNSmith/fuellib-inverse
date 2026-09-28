@@ -18,10 +18,6 @@ tag_template = "v{new_version}"
 src = "pyproject.toml"
 search = 'version = "{current_version}"'
 
-[[file]]
-src = "fuellib/__init__.py"
-search = '__version__ = "{current_version}"'
-
 [[before_commit]]
 name = "Update changelog"
 cmd = "uv run keepachangelog release {new_version}"
