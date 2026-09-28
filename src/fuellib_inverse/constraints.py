@@ -7,10 +7,11 @@ from typing import Self
 import jax.numpy as jnp
 import numpy as np
 import pint
-from fuellib import PintUnits, fuel
 from jax import Array
 from jax.typing import ArrayLike
 from pydantic import BaseModel, ConfigDict
+
+from fuellib import PintUnits, fuel
 
 DEFAULT_UNITS = {
     "temp": "K",
@@ -20,17 +21,30 @@ DEFAULT_UNITS = {
 }
 
 
-def _magnitude(value: pint.Quantity | float) -> float:
-    """Return a raw float from a bound that may be a `pint.Quantity` or a plain number."""
+def _magnitude(value: pint.Quantity | float, units: str | None = None) -> float:
+    """Return a raw float from a bound that may be a `pint.Quantity` or a plain number.
+
+    If `value` is a `pint.Quantity` and `units` is given, it is converted to
+    `units` before the magnitude is extracted.
+    """
     if isinstance(value, pint.Quantity):
+        if units is not None:
+            value = value.to(units)
         return float(value.magnitude)
     return float(value)
 
 
-def _bounds(target_range: pint.Quantity | tuple[float, float]) -> tuple[float, float]:
-    """Return the ``(lower, upper)`` bounds of a target range as plain floats."""
+def _bounds(
+    target_range: pint.Quantity | tuple[float, float], units: str | None = None
+) -> tuple[float, float]:
+    """Return the ``(lower, upper)`` bounds of a target range as plain floats.
+
+    If `target_range` is a `pint.Quantity`, it is converted to `units` (which
+    should match the units `value()` reports its result in) before the bounds
+    are extracted.
+    """
     lower, upper = target_range
-    return _magnitude(lower), _magnitude(upper)
+    return _magnitude(lower, units), _magnitude(upper, units)
 
 
 def half_width_scale(lower: float, upper: float) -> float:
@@ -79,6 +93,26 @@ def square_hinge_penalty(
     return below**2 + above**2
 
 
+def discourage_below(Y: Array, threshold: float, power: float = 2.0) -> Array:
+    """U-shaped penalty discouraging weight fractions in ``(0, threshold)``.
+
+    The penalty is 0 at ``Y == 0`` (so exact absence of a compound is never
+    penalized), rises to a peak partway through ``(0, threshold)``, and falls
+    back to 0 at ``Y == threshold`` and beyond (values at/above the threshold
+    are considered acceptable and unpenalized).
+
+    `power` tunes the shape of the hump: ``power == 1`` gives a symmetric
+    parabolic hump; ``power > 1`` narrows it (steeper drop-off near 0 and
+    `threshold`, more tolerant in between); ``power < 1`` flattens/widens it
+    (penalizes most of the interior near-uniformly, with a sharper cutoff
+    right at the edges).
+    """
+    if threshold <= 0:
+        return jnp.zeros_like(Y)
+    x = jnp.clip(Y / threshold, 0.0, 1.0)
+    return (4.0 * x * (1.0 - x)) ** power
+
+
 def Y2X(Y: Array, MW: ArrayLike) -> Array:
     """Convert weight fraction vector to mole fraction vector given molecular weights."""
     return Y / MW / jnp.sum(Y / MW)
@@ -103,18 +137,26 @@ class Constraint(BaseModel, ABC):
         """Return the loss for the constraint given a weight fraction vector."""
 
 
-class AromaticsConstraint(Constraint):
-    """Aromatics content constraint for inverse optimization."""
+class CompositionMixin(BaseModel):
+    """Mixin for composition-related constraints."""
 
     @classmethod
-    def from_input(
-        cls, property: str, inp_dict: dict, fuel_: fuel
-    ) -> "AromaticsConstraint":
+    def from_input(cls, property: str, inp_dict: dict, fuel_: fuel) -> Self:
         """Parse an aromatics constraint from an input dictionary."""
         lambda_: float = inp_dict.get("lambda", 1.0)
+        units: str = inp_dict.get("units", "vol%")
         atol: float = inp_dict.get("atol", 0.0)
         rtol: float = inp_dict.get("rtol", 0.05)
         target: float | tuple[float, float] | None = inp_dict.get("target", None)
+
+        if units == "frac":
+            # Normalize fraction targets to percent, since `value()` reports
+            # (and bounds are compared against) aromatics content in percent.
+            if isinstance(target, tuple):
+                target = (target[0] * 100.0, target[1] * 100.0)
+            elif target is not None:
+                target = target * 100.0
+            atol *= 100.0
 
         constraint = {
             "property": property,
@@ -123,6 +165,10 @@ class AromaticsConstraint(Constraint):
             "fuel": fuel_,
         }
         return cls.model_validate(constraint)
+
+
+class AromaticsConstraint(Constraint, CompositionMixin):
+    """Aromatics content constraint for inverse optimization."""
 
     @cached_property
     def aromatics(self) -> np.ndarray:
@@ -140,9 +186,9 @@ class AromaticsConstraint(Constraint):
         return np.array(self.fuel.MW.to(DEFAULT_UNITS["MW"]))
 
     def value(self, Y: Array) -> Array:
-        """Return the current value of the aromatics fraction given a weight fraction vector."""
+        """Return the current aromatics content, in percent, given a weight fraction vector."""
         X = Y2X(Y, self.MW)
-        return jnp.sum(X * self.aromatics)
+        return 100.0 * jnp.sum(X * self.aromatics)
 
     def loss(self, Y: Array) -> Array:
         """Return the loss for the aromatics constraint given a weight fraction vector."""
@@ -206,7 +252,7 @@ class DensityConstraint(Constraint, TemperatureMixin):
 
     def loss(self, Y: Array) -> Array:
         """Return the loss for the density constraint given a weight fraction vector."""
-        lower, upper = _bounds(self.target_range)
+        lower, upper = _bounds(self.target_range, DEFAULT_UNITS[self.property])
         scale = half_width_scale(lower, upper)
         return self.lambda_ * square_hinge_penalty(self.value(Y), lower, upper, scale)
 
@@ -239,6 +285,6 @@ class ViscosityConstraint(Constraint, TemperatureMixin):
 
     def loss(self, Y: Array) -> Array:
         """Return the loss for the viscosity constraint given a weight fraction vector."""
-        lower, upper = _bounds(self.target_range)
+        lower, upper = _bounds(self.target_range, DEFAULT_UNITS[self.property])
         scale = half_width_scale(lower, upper)
         return self.lambda_ * square_hinge_penalty(self.value(Y), lower, upper, scale)

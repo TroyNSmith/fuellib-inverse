@@ -1,6 +1,7 @@
 """Module for solving the inverse problem using optimization parameters."""
 
 import logging
+import sys
 from pathlib import Path
 from typing import Literal
 
@@ -8,8 +9,10 @@ import jax
 import jax.numpy as jnp
 import optax
 import pandas as pd
+
 from fuellib import fuel
 
+from .constraints import discourage_below
 from .parse import OptimizationParameters
 
 logger = logging.getLogger(__name__)
@@ -38,6 +41,7 @@ def solve(
     pars: OptimizationParameters,
     *,
     Y0: jnp.ndarray | None = None,
+    seed: int | None = None,
     out: str | Path | None = None,
     verbosity: Literal[0, 1, 2, 3, 4, 5] = 2,
 ) -> jnp.ndarray:
@@ -45,6 +49,9 @@ def solve(
 
     :param pars: Optimization parameters, including constraints and solver settings.
     :param Y0: Optional initial guess for the (pre-softmax) mass-fraction logits.
+        If not provided, a random initial guess is drawn instead.
+    :param seed: Optional seed for randomizing the initial guess when ``Y0`` is
+        not provided.
     :param verbosity: Logging verbosity level.
         ``0`` disables logging
         ``1`` enables DEBUG
@@ -56,10 +63,24 @@ def solve(
     """
     handler.setLevel(verbosity * 10)
 
-    Z0 = Y0 if Y0 is not None else jnp.zeros(pars.fuel.num_compounds)
+    if Y0 is not None:
+        Z0 = Y0
+    else:
+        key = jax.random.PRNGKey(seed if seed is not None else 0)
+        Z0 = jax.random.normal(key, (pars.fuel.num_compounds,))
+
     Z = Z0
 
-    loss_fn = lambda Z: sum([c.loss(jax.nn.softmax(Z)) for c in pars.constraints])
+    def loss_fn(Z: jnp.ndarray) -> jnp.ndarray:
+        Y = jax.nn.softmax(Z)
+        loss = sum(
+            [c.loss(Y) for c in pars.constraints]
+        ) + pars.regularization_strength * jnp.mean(Z**2)
+        if pars.discourage_below is not None:
+            loss = loss + pars.discourage_below_strength * jnp.sum(
+                discourage_below(Y, pars.discourage_below, pars.discourage_below_power)
+            )
+        return loss
 
     @jax.jit
     def step(
@@ -87,28 +108,30 @@ def solve(
             max_deviation,
         )
     else:
-        logger.warning(
-            f"{RED}Optimization did not converge within max_iterations=%d "
-            f"(max deviation (Y) = %.6g).{STOP}",
+        logger.error(
+            f"\n{RED}Optimization did not converge within max_iterations=%d "
+            f"(max deviation (Y) = %.6g).{STOP}\n",
             pars.max_iter,
             max_deviation,
         )
+        sys.exit(1)
 
     for c in pars.constraints:
         temp = getattr(c, "temperature", None)
         units = getattr(c.target_range, "units", "dimensionless")
         if temp is not None:
             logger.info(
-                f"\n{BLUE}Final value for %s constraint{STOP}:\nTemperature: %.2f %s\nValue: %.6g %s",
+                f"\n{BLUE}Final value for %s constraint{STOP}:\nTemperature: %.2f %s\nTarget: %s\nValue: %.6g %s",
                 c.property,
                 temp.magnitude,
                 temp.units,
+                c.target_range,
                 c.value(Y),
                 units,
             )
         else:
             logger.info(
-                f"\n{BLUE}Final value for constraint %s{STOP}:\nTemperature: N/A\nValue: %.6f %s",
+                f"\n{BLUE}Final value for %s constraint{STOP}:\nTemperature: N/A\nValue: %.6f %s",
                 c.property,
                 c.value(Y),
                 units,

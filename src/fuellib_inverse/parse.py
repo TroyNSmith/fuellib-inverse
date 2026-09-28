@@ -5,8 +5,9 @@ from typing import Any, Literal
 
 import optax
 import pyparsing as pp
-from fuellib import fuel
 from pydantic import BaseModel, ConfigDict, Field
+
+from fuellib import fuel
 
 from .constraints import (
     AromaticsConstraint,
@@ -20,6 +21,9 @@ SIMPLE_NUMERICAL_KEYS = [
     "tolerance",
     "learning_rate",
     "regularization_strength",
+    "discourage_below",
+    "discourage_below_strength",
+    "discourage_below_power",
 ]
 SIMPLE_STRING_KEYS = [
     "name",
@@ -28,7 +32,7 @@ SIMPLE_STRING_KEYS = [
 
 BLOCKS = [
     "gcxgc",
-    "aromatics_content",
+    "aromatics",
     "density",
     "viscosity",
 ]
@@ -205,6 +209,9 @@ class OptimizationParameters(BaseModel):
     optimizer_method: Literal["adam"] = "adam"
 
     fuel: fuel
+    discourage_below: float | None = None
+    discourage_below_strength: float = 1.0
+    discourage_below_power: float = 2.0
     constraints: list[Constraint] = Field(default_factory=list)
 
     @classmethod
@@ -222,14 +229,18 @@ class OptimizationParameters(BaseModel):
         regularization_strength = inp_dict.get("regularization_strength", 0.1)
         optimizer_method = inp_dict.get("optimizer", "adam")
 
+        discourage_below = inp_dict.get("discourage_below", None)
+        discourage_below_strength = inp_dict.get("discourage_below_strength", 1.0)
+        discourage_below_power = inp_dict.get("discourage_below_power", 2.0)
+
         fuel_ = fuel(name=name)
 
         # Blocks
         constraints = []
-        ## %aromatics_content
-        aromatics_dict = inp_dict.get("aromatics_content")
+        ## %aromatics
+        aromatics_dict = inp_dict.get("aromatics")
         aromatics_constraint = (
-            AromaticsConstraint.from_input("aromatics_content", aromatics_dict, fuel_)
+            AromaticsConstraint.from_input("aromatics", aromatics_dict, fuel_)
             if aromatics_dict
             else None
         )
@@ -264,6 +275,9 @@ class OptimizationParameters(BaseModel):
             "regularization_strength": regularization_strength,
             "optimizer_method": optimizer_method,
             "fuel": fuel_,
+            "discourage_below": discourage_below,
+            "discourage_below_strength": discourage_below_strength,
+            "discourage_below_power": discourage_below_power,
             "constraints": constraints,
         }
 

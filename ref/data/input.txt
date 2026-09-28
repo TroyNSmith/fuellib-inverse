@@ -1,20 +1,19 @@
 # FuelLib-Inverse input file
 
 # Fuel
-name                     = posf10325       # Name of the fuel
+name                     = jet-a       # Name of the fuel
 
 # Optimization parameters
 max_iter                 = 100,000     # Maximum number of optimization steps
 tolerance                = 1e-8        # Convergence tolerance
 learning_rate            = 0.001       # Scaling factor for size of the step taken during gradient descent
-regularization_strength  = 1.0         # Multiplier determining how harshly the optimizer penalizes large parameter values
+regularization_strength  = 0.1         # Multiplier determining how harshly the optimizer penalizes large parameter values
 optimizer                = adam        # Optax optimizer to use. Options = ["adam"]
 
-# Included components (Not Implemented)
-%smiles
-  CC1=CC=CC=C1
-  C1COCC1
-end
+# Simple constraints
+discourage_below          = 0.05       # Discourage weight percentages below 0.1 (without penalizing 0.0)
+discourage_below_strength = 5.0        # Weighting coefficient for the discourage_below penalty
+discourage_below_power    = 2.0        # Shape exponent for the discourage_below penalty (1 = parabolic hump; >1 narrows the hump; <1 widens it)
 
 # Physical constraints
 %gcxgc                                 # Not Implemented
@@ -24,7 +23,7 @@ end
   atol       = 1.00                    # Absolute tolerance for each reference compound's weight % (+/- atol)
 end
 
-%aromatics_content
+%aromatics
   units      = vol%                    # vol% (volume %) or frac (fraction) for target values. Default = vol%
   lambda     = 1.0                     # Weighting coefficient for adjusting penalty. Default = 1.0
   target     = [8.0, 24.0]             # Target value (val) or range ([min, max]) for property

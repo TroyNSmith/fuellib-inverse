@@ -221,4 +221,5 @@ __marimo__/
 uv.lock
 
 # Scratch files
-tests/scratch.py
+tests/scratch*
+.scratch
